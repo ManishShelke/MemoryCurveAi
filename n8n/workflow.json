@@ -1,0 +1,195 @@
+{
+  "name": "MemoryCurve - Ebbinghaus Spaced Repetition + Email Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-lesson",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: New Lesson",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "new-lesson-webhook",
+      "notes": "Receives POST data when a new lesson is created. Expected body: { topic_name, lesson_id, timestamp, demo_mode, user_email }"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─── Compute Ebbinghaus Spaced-Repetition Intervals ───\n// Real intervals: 0, 1d, 3d, 7d, 14d, 30d\n// Demo intervals: 0, 1min, 3min, 7min, 10min, 15min\n\nconst input = $input.first().json;\nconst demoMode = input.demo_mode || false;\nconst baseTime = new Date(input.timestamp).getTime();\n\nconst REAL_INTERVALS = [\n  { label: 'Immediate',  ms: 0 },\n  { label: '1 Day',      ms: 86400000 },\n  { label: '3 Days',     ms: 259200000 },\n  { label: '7 Days',     ms: 604800000 },\n  { label: '14 Days',    ms: 1209600000 },\n  { label: '30 Days',    ms: 2592000000 },\n];\n\nconst DEMO_INTERVALS = [\n  { label: 'Immediate',        ms: 0 },\n  { label: '1 min  (1 day)',   ms: 60000 },\n  { label: '3 min  (3 days)',  ms: 180000 },\n  { label: '7 min  (7 days)',  ms: 420000 },\n  { label: '10 min (14 days)', ms: 600000 },\n  { label: '15 min (30 days)', ms: 900000 },\n];\n\nconst intervals = demoMode ? DEMO_INTERVALS : REAL_INTERVALS;\n\nconst reminders = intervals.map(iv => ({\n  lesson_id: input.lesson_id,\n  topic_name: input.topic_name,\n  user_email: input.user_email || '',\n  interval_label: iv.label,\n  scheduled_time: new Date(baseTime + iv.ms).toISOString(),\n  sent_status: false,\n  feedback: null,\n}));\n\nreturn reminders.map(r => ({ json: r }));"
+      },
+      "id": "compute-intervals",
+      "name": "Compute Intervals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "notes": "JavaScript node that computes all reminder timestamps based on the Ebbinghaus forgetting curve. Outputs one item per reminder."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://firestore.googleapis.com/v1/projects/YOUR_PROJECT_ID/databases/(default)/documents/reminders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "={{ JSON.stringify({ lesson_id: { stringValue: $json.lesson_id }, topic_name: { stringValue: $json.topic_name }, interval_label: { stringValue: $json.interval_label }, scheduled_time: { stringValue: $json.scheduled_time }, sent_status: { booleanValue: false }, feedback: { nullValue: null } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "write-reminders",
+      "name": "Write Reminders to Firestore",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [720, 300],
+      "notes": "Writes each computed reminder to the Firestore 'reminders' collection via REST API. Replace YOUR_PROJECT_ID with your Firebase project ID."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─── Build Notification Payload ───\nconst input = $input.first().json;\nconst now = new Date();\nconst scheduledTime = new Date(input.scheduled_time);\nconst isDue = scheduledTime <= now;\n\nreturn [{\n  json: {\n    title: `🔔 Revise: ${input.topic_name}`,\n    body: `Interval: ${input.interval_label} — Time to strengthen your memory!`,\n    lesson_id: input.lesson_id,\n    user_email: input.user_email,\n    topic_name: input.topic_name,\n    interval_label: input.interval_label,\n    is_due: isDue,\n    scheduled_time: input.scheduled_time,\n  }\n}];"
+      },
+      "id": "build-notification",
+      "name": "Build Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300],
+      "notes": "Formats the notification payload for email delivery."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.emailjs.com/api/v1.0/email/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"service_id\": \"service_u6zfa08\",\n  \"template_id\": \"template_9jn5b0r\",\n  \"user_id\": \"KsJT_Bdz9uexgLbW8\",\n  \"template_params\": {\n    \"to_email\": \"{{ $json.user_email }}\",\n    \"subject\": \"Study Reminder: {{ $json.topic_name }}\",\n    \"message\": \"<div style='font-family: Arial, sans-serif; padding: 20px;'><h2>🔔 Time to Review!</h2><p>Your spaced repetition reminder for <strong>{{ $json.topic_name }}</strong> is due.</p><p>Interval: <em>{{ $json.interval_label }}</em></p><p>Jump back into the app to log your memory retention and strengthen your curve!</p><br/><p>Keep up the great work,<br/>MemoryCurve AI</p></div>\",\n    \"name\": \"MemoryCurve AI\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email via EmailJS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 300],
+      "notes": "Sends the study reminder email to the user via EmailJS REST API. Uses the same EmailJS credentials as the frontend app."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Reminders scheduled & email sent', topic: $json.title }) }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1440, 300],
+      "notes": "Returns a success response to the calling application."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feedback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "feedback-webhook",
+      "name": "Webhook: Feedback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 520],
+      "webhookId": "feedback-webhook",
+      "notes": "Receives user feedback (remembered/forgot) for adaptive interval adjustment. Body: { reminder_id, lesson_id, feedback, interval_label }"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─── Adaptive Interval Adjustment ───\n// If user remembered → multiply next interval by 1.5 (easier)\n// If user forgot → multiply next interval by 0.5 (harder/sooner)\n\nconst input = $input.first().json;\nconst feedback = input.feedback; // 'remembered' or 'forgot'\nconst multiplier = feedback === 'remembered' ? 1.5 : 0.5;\n\nreturn [{\n  json: {\n    reminder_id: input.reminder_id,\n    lesson_id: input.lesson_id,\n    feedback: feedback,\n    adjustment_multiplier: multiplier,\n    message: feedback === 'remembered'\n      ? 'Great retention! Next review will be spaced further apart.'\n      : 'Memory needs reinforcement. Next review moved closer.',\n  }\n}];"
+      },
+      "id": "adjust-intervals",
+      "name": "Adjust Future Intervals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 520],
+      "notes": "Computes the adaptive adjustment based on user feedback. This multiplier can be applied to future intervals for this lesson."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, feedback: $json.feedback, message: $json.message, multiplier: $json.adjustment_multiplier }) }}"
+      },
+      "id": "respond-feedback",
+      "name": "Respond Feedback",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 520],
+      "notes": "Returns the adjustment result to the calling application."
+    }
+  ],
+  "connections": {
+    "Webhook: New Lesson": {
+      "main": [
+        [{ "node": "Compute Intervals", "type": "main", "index": 0 }]
+      ]
+    },
+    "Compute Intervals": {
+      "main": [
+        [{ "node": "Write Reminders to Firestore", "type": "main", "index": 0 }]
+      ]
+    },
+    "Write Reminders to Firestore": {
+      "main": [
+        [{ "node": "Build Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Notification": {
+      "main": [
+        [{ "node": "Send Email via EmailJS", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Email via EmailJS": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "Webhook: Feedback": {
+      "main": [
+        [{ "node": "Adjust Future Intervals", "type": "main", "index": 0 }]
+      ]
+    },
+    "Adjust Future Intervals": {
+      "main": [
+        [{ "node": "Respond Feedback", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "ebbinghaus" },
+    { "name": "spaced-repetition" },
+    { "name": "hackathon" },
+    { "name": "emailjs" }
+  ]
+}

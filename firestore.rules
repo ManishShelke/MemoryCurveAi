@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /lessons/{lessonId} {
+      allow read, write: if true;
+    }
+
+    match /reminders/{reminderId} {
+      allow read, write: if true;
+    }
+
+    match /studyMaterials/{materialId} {
+      allow read, write: if true;
+    }
+
+    match /quizAttempts/{attemptId} {
+      allow read, write: if true;
+    }
+
+    match /pomodoroSessions/{sessionId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,59 @@
+====================================================================
+MemoryCurve: Adaptive Memory System (Hackathon Project)
+What We Built & How It Works
+====================================================================
+
+You asked for a system that helps people remember things better using the "Ebbinghaus Forgetting Curve". Here is an easy-to-understand breakdown of exactly what I built for you:
+
+1. THE CORE IDEA (Spaced Repetition)
+--------------------------------------------------------------------
+Instead of reviewing a topic every single day, science says you should review it at increasing intervals (e.g., today, then in 3 days, then in 7 days, then in 14 days). 
+
+I built the "brain" (the math formula) that automatically calculates these exact times whenever a user adds a new lesson to the system.
+
+
+2. THE REACT.JS WEBSITE 
+--------------------------------------------------------------------
+I built a beautiful, dark-themed website with glass-like cards. It has 4 main parts:
+- Add Lesson: A simple input box where you type what you just learned.
+- Your Lessons: A list showing everything you are currently tracking.
+- Reminders Panel: This shows your upcoming reviews. It has live countdown timers (like "Due in 2m 30s") and color-codes them (Red = Due Now, Green = Later).
+- Analytics Dashboard: Cool graphs that show you how many things you remembered versus forgot.
+
+
+3. THE "DEMO MODE" (For the Hackathon Judges)
+--------------------------------------------------------------------
+You can't wait 7 days during a 5-minute hackathon presentation! So, I built a special "Demo Mode" switch. 
+When Demo Mode is ON:
+- 1 Day becomes 1 Minute
+- 3 Days becomes 3 Minutes
+- 7 Days becomes 7 Minutes
+This means you can add a lesson, talk to the judges for 60 seconds, and watch the very first reminder pop up live on the screen!
+
+
+4. THE FIREBASE DATABASE
+--------------------------------------------------------------------
+Every single lesson and reminder is instantly saved to the cloud using Google Firebase. 
+- If you refresh the page, nothing is lost.
+- Everything happens in "real-time" (if you add a lesson on your phone, it instantly appears on your laptop screen without refreshing).
+
+
+5. SMART FEEDBACK SYSTEM
+--------------------------------------------------------------------
+When a reminder pops up on the screen, it asks: "Did you remember this?"
+- If you click "Remembered", the system praises you and pushes the next review further out (e.g., 10 minutes instead of 7).
+- If you click "Forgot", the system says "No worries!" and brings the next review closer so you don't forget it again.
+This is the "Adaptive" part of the Adaptive Memory System.
+
+
+6. N8N AUTOMATION WORKFLOW
+--------------------------------------------------------------------
+I generated an exact blueprint (the "workflow.json" file) for an automation tool called n8n. In a real-world scenario outside of the hackathon, this workflow is what connects the database to email or push-notification services, automatically texting the user when a review is due.
+
+
+WHY THIS WINS A HACKATHON
+--------------------------------------------------------------------
+- It solves a real scientific problem (the forgetting curve).
+- It looks highly premium and modern (dark glassmorphism UI).
+- It doesn't just pretend to work; it is fully connected to a live cloud database (Firebase).
+- The Demo Mode allows judges to see long-term spaced repetition happening in literally 60 seconds.
