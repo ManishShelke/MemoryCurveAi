@@ -1,13 +1,13 @@
+import { GoogleGenAI } from '@google/genai';
 import { chunkText } from './documentService.js';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 dotenv.config();
 
 const API_KEY = process.env.GEMINI_API_KEY || '';
-const MODEL = 'gemini-1.5-flash';
+const MODEL = 'gemini-2.0-flash';
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 2000;
@@ -29,25 +29,25 @@ async function fetchFromAI(systemPrompt, userText) {
     throw new Error('Server missing GEMINI_API_KEY environment variable');
   }
 
-  const model = genAI.getGenerativeModel({
-    model: MODEL,
-    generationConfig: {
-      temperature: 0.7,
-      responseMimeType: 'application/json',
-    },
-    systemInstruction: systemPrompt,
-  });
-
   let lastError = null;
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
     try {
-      console.log(`[AI] Attempt ${attempt}/${RETRY_ATTEMPTS} processing ~${userText.length} chars with Gemini...`);
-      
-      const result = await model.generateContent(userText);
-      const response = await result.response;
-      let content = response.text();
-      
+      console.log(`[AI] Attempt ${attempt}/${RETRY_ATTEMPTS} processing ~${userText.length} chars with ${MODEL}...`);
+
+      const response = await ai.models.generateContent({
+        model: MODEL,
+        contents: userText,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+        },
+      });
+
+      let content = response.text;
+
+      // Strip markdown code fences if present
       if (content.startsWith('```json')) content = content.replace(/^```json/, '').replace(/```$/, '').trim();
       else if (content.startsWith('```')) content = content.replace(/^```/, '').replace(/```$/, '').trim();
 
@@ -57,14 +57,14 @@ async function fetchFromAI(systemPrompt, userText) {
     } catch (err) {
       lastError = err;
       console.warn(`[AI] Error on attempt ${attempt}:`, err.message);
-      
+
       // Don't retry auth errors
-      if (err.message.includes('API key') || err.message.includes('401') || err.message.includes('403')) {
+      if (err.message?.includes('API key') || err.message?.includes('401') || err.message?.includes('403')) {
         throw err;
       }
 
-      // 429 quota errors should wait a bit longer
-      if (err.message.includes('429')) {
+      // Rate limit: wait longer
+      if (err.message?.includes('429')) {
         console.warn(`[AI] Rate limited. Waiting 30s...`);
         await sleep(30000);
         continue;
@@ -236,11 +236,10 @@ Return ONLY JSON:
 // ── Master Orchestrator ─────────────────────────────────────
 
 export async function processFullDocument(fullText, title) {
-  // Gemini 1.5 Flash handles up to 1M tokens, but we still chunk to keep JSON responses focused
-  const chunks = chunkText(fullText, 40000); // Larger chunks for Gemini
-  const primaryChunk = chunks[0]; 
+  const chunks = chunkText(fullText, 40000);
+  const primaryChunk = chunks[0];
 
-  console.log(`[Backend] Processing document with Gemini. Using primary chunk of ${primaryChunk.length} chars.`);
+  console.log(`[Backend] Processing document with ${MODEL}. Using primary chunk of ${primaryChunk.length} chars.`);
 
   const results = {
     summary: null,
@@ -266,14 +265,14 @@ export async function processFullDocument(fullText, title) {
     }
   };
 
-  // Run tasks concurrently in batches
+  // Run tasks concurrently in batches to avoid overloading
   const batch1 = await Promise.all([
     safeRun(summarizeContent, 'summary', primaryChunk),
     safeRun(generateFlashcards, 'flashcards', primaryChunk, 15),
     safeRun(generateQuiz, 'quiz', primaryChunk, 10),
   ]);
 
-  await sleep(1000); 
+  await sleep(1000);
 
   const batch2 = await Promise.all([
     safeRun(generateConceptAnalysis, 'concepts', primaryChunk),
